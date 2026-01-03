@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restaurant Recommender</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="text-center mb-5">
+                    <h1 class="display-4 fw-bold text-primary mb-3">
+                        <i class="fas fa-utensils me-3"></i>Restaurant Recommender
+                    </h1>
+                    <p class="lead text-muted">Content-Based Filtering (TF-IDF + 12K Bangalore restaurants)</p>
+                </div>
+
+                <div class="card shadow-lg border-0">
+                    <div class="card-body p-5">
+                        <form method="POST">
+                            <div class="row g-3 align-items-end">
+                                <div class="col-md-5">
+                                    <label class="form-label fs-5 fw-bold">Search:</label>
+                                    <input type="text" name="restaurant" class="form-control form-control-lg"
+                                           value="{{ query or '' }}" placeholder="Enter Search eg: KFC, BTM, Biryani" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fs-5 fw-bold">Prioritize:</label>
+                                    <select name="priority" class="form-select form-select-lg">
+                                        <option value="name" {% if priority == 'name' %}selected{% endif %}>Restaurant Name</option>
+                                        <option value="location" {% if priority == 'location' %}selected{% endif %}>Location</option>
+                                        <option value="cuisines" {% if priority == 'cuisines' %}selected{% endif %}>Dish/Cuisine</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">&nbsp;</label>
+                                    <button type="submit" class="btn btn-primary btn-lg w-100">
+                                        <i class="fas fa-search me-2"></i>Recommend
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                {% if error %}
+                <div class="alert alert-warning mt-4">{{ error }}</div>
+                {% endif %}
+
+                {% if recommendations is not none and not recommendations.empty %}
+                <div class="card shadow mt-4">
+                    <div class="card-header bg-success text-white">
+                        <h5>
+                            <i class="fas fa-th-list me-2"></i>
+                            Top Matches for "{{ query }}"
+                            {% if priority != 'name' %}
+                                <span class="badge bg-light text-dark ms-2">Priority: {{ priority|title }}</span>
+                            {% endif %}
+                        </h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-success">
+                                    <tr>
+                                        <th>Name</th><th>Location</th><th>Cuisines</th><th>Rating</th><th>Cost</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for _, row in recommendations.iterrows() %}
+                                    <tr>
+                                        <td><strong>{{ row.get('name', 'N/A') }}</strong></td>
+                                        <td>{{ row.get('location', 'N/A') }}</td>
+                                        <td><span class="badge bg-info">{{ row.get('cuisines', 'N/A') }}</span></td>
+                                        <td>
+                                            {% if row.get('rate_display') == 'New' or row.get('rate_display') is none %}
+                                                <span class="badge bg-secondary">New</span>
+                                            {% else %}
+                                                <span class="badge bg-warning">{{ row.get('rate_display')|round(1) }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td><strong>₹{{ row.get('approx_cost', 0)|round(0)|int }}</strong></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {# VISUALIZATION - Fixed tags #}
+                    {% if summary %}
+                    <div class="card-header bg-info text-white mt-3">
+                        <h6><i class="fas fa-chart-bar me-2"></i>Insights</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <canvas id="recChart"></canvas>
+                            </div>
+                            <div class="col-md-4">
+                                <ul class="list-group list-group-flush">
+                                    <li class="list-group-item d-flex justify-content-between">
+                                        <span>Restaurants</span><strong>{{ summary.count }}</strong>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between">
+                                        <span>Avg Rating</span><strong>{{ summary.avg_rating }}/5</strong>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between">
+                                        <span>Max Cost</span><strong>₹{{ summary.top_cost }}</strong>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="text-center text-muted mt-4">
+            <small>Swayam Project</small>
+        </div>
+    </div>
+
+    {# Scripts at bottom - FIXED #}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        {% if summary %}
+        const ctx = document.getElementById('recChart')?.getContext('2d');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: {{ summary.names|tojson }},
+                    datasets: [{
+                        label: 'Rating',
+                        data: {{ summary.ratings|tojson }},
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { beginAtZero: true, max: 5 } }
+                }
+            });
+        }
+        {% endif %}
+    </script>
+</body>
+</html>
